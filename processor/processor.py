@@ -241,7 +241,10 @@ def do_train(cfg,
 
                 # 3 image align to text prompt 
                 batch = cfg.SOLVER.IMS_PER_BATCH
-                num_classes = model.num_classes
+                if isinstance(model, torch.nn.DataParallel):
+                    num_classes = model.module.num_classes
+                else:
+                    num_classes = model.num_classes
                 i_ter = num_classes // batch
                 left = num_classes-batch* (num_classes//batch)
                 if left != 0 :
@@ -369,7 +372,10 @@ def do_train(cfg,
                                         loss_meter.avg, loss_meter1.avg, loss_meter2.avg, loss_meter4.avg, loss_meter5.avg, loss_meter10.avg, loss_meter11.avg, loss_meter7.avg, loss_meter8.avg, acc_meter.avg, acc_meter1.avg, lr_print))
         if epoch % eval_period == 0:
             batch = 64
-            num_classes = model.num_classes
+            if isinstance(model, torch.nn.DataParallel):
+                num_classes = model.module.num_classes
+            else:
+                num_classes = model.num_classes
             i_ter = num_classes // batch
             left = num_classes-batch* (num_classes//batch)
             if left != 0 :

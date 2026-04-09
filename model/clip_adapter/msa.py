@@ -13,7 +13,8 @@ import torch
 from torch import Tensor
 from torch import nn
 
-version = torch.__version__.split('.')
+version_str = torch.__version__.split('+')[0]  # '2.4.1+cu121' -> '2.4.1'
+version = version_str.split('.')
 major = int(version[0])
 minor = int(version[1])
 patch = int(version[2])

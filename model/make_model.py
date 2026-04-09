@@ -6,6 +6,7 @@ from .clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 _tokenizer = _Tokenizer()
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 
+# Khởi tạo trọng số cho Linear, Conv, BatchNorm.
 def weights_init_kaiming(m):
     classname = m.__class__.__name__
     if classname.find('Linear') != -1:
@@ -22,6 +23,7 @@ def weights_init_kaiming(m):
             nn.init.constant_(m.weight, 1.0)
             nn.init.constant_(m.bias, 0.0)
 
+# Khởi tạo riêng cho lớp classifier.
 def weights_init_classifier(m):
     classname = m.__class__.__name__
     if classname.find('Linear') != -1:
@@ -29,6 +31,7 @@ def weights_init_classifier(m):
         if m.bias:
             nn.init.constant_(m.bias, 0.0)
 
+# Đây là 1 nhánh model cho 1 phổ ảnh như RGB hoặc NIR hoặc TIR.
 class build_transformer(nn.Module):
     def __init__(self, num_classes, camera_num, scene_num, cfg, prompt_learner=None, text_encoder=None):
         super(build_transformer, self).__init__()
@@ -171,6 +174,7 @@ class build_transformer(nn.Module):
             self.state_dict()[i].copy_(param_dict[i])
         print('Loading pretrained model for finetuning from {}'.format(model_path))
 
+# Đây là model đa nhánh, ghép nhiều build_transformer cho nhiều phổ.
 class build_multi_branch(nn.Module):
 
     def __init__(self, num_class, camera_num, scene_num, cfg):
@@ -221,11 +225,12 @@ class build_multi_branch(nn.Module):
             self.state_dict()[i.replace('module.', '')].copy_(param_dict[i])
         print('Loading pretrained model from {}'.format(trained_path))
 
+# Chỉ là hàm gọi build_multi_branch(...) rồi trả model ra.
 def make_model(cfg, num_class, camera_num, scene_num):
     model = build_multi_branch(num_class, camera_num, scene_num, cfg)
     return model
 
-
+# Phần CLIP
 from .clip_adapter import clip as clip_adapter
 from .clip import clip
 def load_clip_to_cpu(config, backbone_name, h_resolution, w_resolution, vision_stride_size):
@@ -251,6 +256,8 @@ def load_clip_to_cpu(config, backbone_name, h_resolution, w_resolution, vision_s
 
     return model
 
+# Phần text
+# TextEncoder
 class TextEncoder(nn.Module):
     def __init__(self, clip_model):
         super().__init__()
@@ -261,17 +268,22 @@ class TextEncoder(nn.Module):
         self.dtype = clip_model.dtype
 
     def forward(self, prompts, tokenized_prompts):
-        x = prompts + self.positional_embedding.type(self.dtype)
+        x = prompts + self.positional_embedding.to(prompts.device).type(self.dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
         x = self.ln_final(x).type(self.dtype)
 
         # x.shape = [batch_size, n_ctx, transformer.width]
+        device = x.device
+        tokenized_prompts = tokenized_prompts.to(device)
+
+        batch_idx = torch.arange(x.shape[0], device=device)
         # take features from the eot embedding (eot_token is the highest number in each sequence)
-        x = x[torch.arange(x.shape[0]), tokenized_prompts.argmax(dim=-1)] @ self.text_projection
+        x = x[batch_idx, tokenized_prompts.argmax(dim=-1)] @ self.text_projection
         return x
 
+# PromptLearner
 class PromptLearner(nn.Module):
     def __init__(self, cfg, num_class, dataset_name, dtype, token_embedding):
         super().__init__()
@@ -294,7 +306,7 @@ class PromptLearner(nn.Module):
         n_ctx = self.prompt_num
         tokenized_prompts = clip.tokenize(ctx_init).cuda() 
         with torch.no_grad():
-            embedding = token_embedding(tokenized_prompts).type(dtype) 
+            embedding = token_embedding(tokenized_prompts).type(dtype)
         self.tokenized_prompts = tokenized_prompts  # torch.Tensor
 
         n_cls_ctx = self.prompt_num
@@ -327,3 +339,8 @@ class PromptLearner(nn.Module):
 
         return prompts 
 
+# File này chủ yếu để:
+# - dựng backbone CLIP,
+# - dựng model đa nhánh cho multi-spectral,
+# - tạo prompt learner và text encoder,
+# - trả feature/logits cho phần train.
